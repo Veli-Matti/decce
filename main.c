@@ -11,17 +11,18 @@ int addInIncrements() {
     for (int i = 0; i < 10; i++) {
 
         seconds = time(NULL);
-        printf("%d, secs = %d\n", i, seconds);
+        printf("%d, secs = %d\n", i, (int)seconds);
         fflush(stdout);
         usleep(1000000);
     }
+    return 0;
 }
 
 
 
 int main()
 {
-    printf("Spped step simulator!\n");
+    printf("Speed step simulator!\n");
     doAdjust(500, 10, 1000);
     return 0;
 }
@@ -77,7 +78,7 @@ void doAdjust(int maxAcc, int jerkFreq, int targetSpeed)
         // Update the speed
         directive.currentSpeed += speedStep;
         time_ms += delay_ms;
-        printf("SpeedStep: %d, CurretnSpeed: %d, Time (ms): %d\n",
+        printf("SpeedStep: %d, CurrentSpeed: %d, Time (ms): %d",
             speedStep, directive.currentSpeed,time_ms);
         fflush(stdout);
 
