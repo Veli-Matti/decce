@@ -3,66 +3,41 @@
 
 #include <unistd.h>
 #include <time.h>
-#include "include/main.h"
+#include "include/smcp.h"
 
-#define POINTS_COUNT 4
+#define POINTS_BASELINE_Y 200
 
-static SDL_Point points[POINTS_COUNT] = {
-    {320, 200},
-    {300, 240},
-    {340, 240},
-    {320, 200}
-};
-
-int addInIncrements();
-static void doAdjust(int maxAcc, int jerkFreq, int targetSpeed);
-static SDL_Window *sdl_init();
-
-
-int addInIncrements() {
-    time_t seconds;
-    for (int i = 0; i < 10; i++) {
-
-        seconds = time(NULL);
-        printf("%d, secs = %d\n", i, (int)seconds);
-        fflush(stdout);
-        usleep(1000000);
-    }
-    return 0;
-}
-
+static void doAdjust(SDL_Renderer *renderer, int maxAcc, int jerkFreq, int targetSpeed);
 
 
 int main()
 {
+    printf("Speed step simulator!\n");
 
+    // Init SDL2
     SDL_Window* window = NULL;
     SDL_Renderer* renderer = NULL;
     SDL_bool done = SDL_FALSE;
 
-    // Init SDL2
     if (SDL_Init(SDL_INIT_VIDEO) == 0) {
         // Create target window and renderer
-        if (SDL_CreateWindowAndRenderer(640, 480, 0, &window, &renderer) == 0) {
+        if (SDL_CreateWindowAndRenderer(1000, 1000, 0, &window, &renderer) == 0) {
             // Set the color for lines etc
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-            SDL_RenderClear(renderer);
-
+            // ... clear the drwing area (set white)
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
+            SDL_RenderClear(renderer);
+            // Set the color for pen
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+            // Set the scale factor
+            SDL_RenderSetScale(renderer, 0.5, 0.5);
         }
     }
 
-    printf("Speed step simulator!\n");
+    // The actual operations
+    doAdjust(renderer, 500, 10, 1000);
 
-
-    doAdjust(500, 10, 1000);
-
-    // Draw the lines
-    SDL_RenderDrawLines(renderer, points, POINTS_COUNT);
-    SDL_RenderPresent(renderer);
-
+    // Leave the window open until 'X' is clicked
     SDL_Event event;
-
     while (!done) {
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
@@ -71,14 +46,15 @@ int main()
         }
     }
 
+    // Damp down SDL
     if (renderer) {
         SDL_DestroyRenderer(renderer);
     }
     if (window) {
         SDL_DestroyWindow(window);
     }
-
     SDL_Quit();
+
     return 0;
 }
 
@@ -100,7 +76,7 @@ static mcu_error mcu_pwmAccCalcNextSpeedIterConcaveConvex(const mcu_actuator act
     return MCU_ERROR_NONE;
 }
 
-void doAdjust(int maxAcc, int jerkFreq, int targetSpeed)
+void doAdjust(SDL_Renderer *renderer, int maxAcc, int jerkFreq, int targetSpeed)
 {
     accMoveDirective directive;
     directive.breakTime = 0;
@@ -125,6 +101,9 @@ void doAdjust(int maxAcc, int jerkFreq, int targetSpeed)
     bool accelerate = directive.currentSpeed < targetSpeed;
     bool stop = false;
 
+    int iter = 0;
+    SDL_Point points[50];
+
     while (!stop) {
 
         mcu_error error = mcu_pwmAccCalcNextSpeedIterConcaveConvex(
@@ -133,6 +112,12 @@ void doAdjust(int maxAcc, int jerkFreq, int targetSpeed)
         // Update the speed
         directive.currentSpeed += speedStep;
         time_ms += delay_ms;
+
+        SDL_Point point;
+        point.x = time_ms;
+        point.y = POINTS_BASELINE_Y + directive.currentSpeed;
+        points[iter] = point;
+
         printf("SpeedStep: %d, CurrentSpeed: %d, Time (ms): %d\n",
             speedStep, directive.currentSpeed,time_ms);
         fflush(stdout);
@@ -144,6 +129,9 @@ void doAdjust(int maxAcc, int jerkFreq, int targetSpeed)
             stop = directive.currentSpeed < targetSpeed;
         }
         usleep(delay_us);
+        iter++;
     }
+    SDL_RenderDrawLines(renderer, points, iter);
+    SDL_RenderPresent(renderer);
 
 }
