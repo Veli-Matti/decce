@@ -9,7 +9,9 @@
                 "${file}",
                 "-o",
                 "${fileDirname}/${fileBasenameNoExtension}",
-                "-lSDL2"
+                "-lSDL2",
+                "-I",
+                "${workspaceFolder}/src/include/"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"

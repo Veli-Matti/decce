@@ -3,7 +3,9 @@
 
 #include <unistd.h>
 #include <time.h>
-#include "include/smcp.h"
+#include "smcp.h"
+#include "main.h"
+
 
 #define AREA_WIDTH_X 1000
 #define AREA_WIDTH_Y 1000
@@ -12,7 +14,7 @@
 
 #define POINTS_BASELINE_Y 200
 
-static void doAdjust(SDL_Renderer *renderer, int maxAcc, int jerkFreq, int targetSpeed);
+static void doAdjust(SDL_Renderer *renderer, adjustParams * args);
 
 static SDL_Point resolvePoint(int x_val, int y_val);
 
@@ -40,7 +42,13 @@ int main()
     }
 
     // The actual operations
-    doAdjust(renderer, 500, 10, 1000);
+    adjustParams args;
+    args.adjFreq = 10;
+    args.initSpeed = 0;
+    args.maxAcc = 500;
+    args.targetSpeed = 1000;
+
+    doAdjust(renderer, &args);
 
     // Leave the window open until 'X' is clicked
     SDL_Event event;
@@ -82,35 +90,35 @@ static mcu_error mcu_pwmAccCalcNextSpeedIterConcaveConvex(const mcu_actuator act
     return MCU_ERROR_NONE;
 }
 
-void doAdjust(SDL_Renderer *renderer, int maxAcc, int jerkFreq, int targetSpeed)
+void doAdjust(SDL_Renderer *renderer, adjustParams * args)
 {
     accMoveDirective directive;
     directive.breakTime = 0;
     directive.breakZone = 0;
     directive.currentSpeed = 0;
     directive.initialSpeed = 0;
-    directive.jerk = maxAcc / 4;
-    directive.jerkFreq = jerkFreq;
-    directive.maxAcceleration = maxAcc;
+    directive.jerk = args->maxAcc / 4;
+    directive.jerkFreq = args->adjFreq;
+    directive.maxAcceleration = args->maxAcc;
     directive.period = 0;
     directive.phase = pwmAccPhaseConcave;
     directive.targetPos = 15000000;
-    directive.targetSpeed = targetSpeed;
+    directive.targetSpeed = args->targetSpeed;
 
 
     uint32_t time_ms = 0;
     int32_t speedStep = 0;
 
-    int32_t delay_us = 1000000 / jerkFreq;
+    int32_t delay_us = 1000000 / args->adjFreq;
     int32_t delay_ms = delay_us / 1000;
 
-    bool accelerate = directive.currentSpeed < targetSpeed;
+    bool accelerate = directive.currentSpeed < args->targetSpeed;
     bool stop = false;
 
     int iter = 0;
     SDL_Point points[50];
 
-    while (!stop) {
+    do {
 
         mcu_error error = mcu_pwmAccCalcNextSpeedIterConcaveConvex(
             0, &directive, time_ms, &speedStep);
@@ -126,16 +134,16 @@ void doAdjust(SDL_Renderer *renderer, int maxAcc, int jerkFreq, int targetSpeed)
             speedStep, directive.currentSpeed,time_ms);
         fflush(stdout);
 
-        // Check that we wont exceed thelimits
+        // Check that we wont exceed the limits
         if (accelerate) {
-            stop = directive.currentSpeed > targetSpeed;
+            stop = directive.currentSpeed >= args->targetSpeed;
         } else {
-            stop = directive.currentSpeed < targetSpeed;
+            stop = directive.currentSpeed <= args->targetSpeed;
         }
         usleep(delay_us);
         iter++;
-    }
-    // Draw the curve
+    } while (!stop);
+    // Draw the curveq
     SDL_RenderDrawLines(renderer, points, iter);
     SDL_RenderPresent(renderer);
 
