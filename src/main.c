@@ -5,10 +5,16 @@
 #include <time.h>
 #include "include/smcp.h"
 
+#define AREA_WIDTH_X 1000
+#define AREA_WIDTH_Y 1000
+#define SCALE_FACTOR_X 0.5
+#define SCALE_FACTOR_Y 0.5
+
 #define POINTS_BASELINE_Y 200
 
 static void doAdjust(SDL_Renderer *renderer, int maxAcc, int jerkFreq, int targetSpeed);
 
+static SDL_Point resolvePoint(int x_val, int y_val);
 
 int main()
 {
@@ -21,7 +27,7 @@ int main()
 
     if (SDL_Init(SDL_INIT_VIDEO) == 0) {
         // Create target window and renderer
-        if (SDL_CreateWindowAndRenderer(1000, 1000, 0, &window, &renderer) == 0) {
+        if (SDL_CreateWindowAndRenderer(AREA_WIDTH_X, AREA_WIDTH_Y, 0, &window, &renderer) == 0) {
             // Set the color for lines etc
             // ... clear the drwing area (set white)
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
@@ -29,7 +35,7 @@ int main()
             // Set the color for pen
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
             // Set the scale factor
-            SDL_RenderSetScale(renderer, 0.5, 0.5);
+            SDL_RenderSetScale(renderer, SCALE_FACTOR_X, SCALE_FACTOR_Y);
         }
     }
 
@@ -113,9 +119,7 @@ void doAdjust(SDL_Renderer *renderer, int maxAcc, int jerkFreq, int targetSpeed)
         directive.currentSpeed += speedStep;
         time_ms += delay_ms;
 
-        SDL_Point point;
-        point.x = time_ms;
-        point.y = POINTS_BASELINE_Y + directive.currentSpeed;
+        SDL_Point point = resolvePoint(time_ms, directive.currentSpeed);
         points[iter] = point;
 
         printf("SpeedStep: %d, CurrentSpeed: %d, Time (ms): %d\n",
@@ -131,7 +135,16 @@ void doAdjust(SDL_Renderer *renderer, int maxAcc, int jerkFreq, int targetSpeed)
         usleep(delay_us);
         iter++;
     }
+    // Draw the curve
     SDL_RenderDrawLines(renderer, points, iter);
     SDL_RenderPresent(renderer);
 
+}
+
+SDL_Point resolvePoint(int x_val, int y_val)
+{
+    SDL_Point retval;
+    retval.x = x_val;
+    retval.y = (AREA_WIDTH_Y - y_val) / SCALE_FACTOR_Y;
+    return retval;
 }
