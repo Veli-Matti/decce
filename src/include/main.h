@@ -3,4 +3,5 @@ typedef struct {
     int targetSpeed;
     int adjFreq;
     int maxAcc;
+    uint32_t runtime_ms;
 } adjustParams;

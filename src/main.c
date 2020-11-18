@@ -14,7 +14,7 @@
 
 #define POINTS_BASELINE_Y 200
 
-static void doAdjust(SDL_Renderer *renderer, adjustParams * args);
+static uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args);
 
 static SDL_Point resolvePoint(int x_val, int y_val);
 
@@ -52,15 +52,18 @@ int main()
     args.initSpeed = 0;
     args.maxAcc = 500;
     args.targetSpeed = 1000;
-    doAdjust(renderer, &args);
+    args.runtime_ms = 0;
+    uint32_t convex_ms = doAdjust(renderer, &args);
 
     // ... Decceleration
     SDL_SetRenderDrawColor(renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
 
     args.initSpeed = args.targetSpeed;
     args.targetSpeed = 0;
-    doAdjust(renderer, &args);
+    args.runtime_ms = convex_ms;
+    uint32_t concave_ms = doAdjust(renderer, &args);
 
+    printf("RUNTIMES (ms). Convex: %d, Concave: %d\n", convex_ms, concave_ms);
     // Leave the window open until 'X' is clicked
     SDL_Event event;
     while (!done) {
@@ -101,7 +104,7 @@ static mcu_error mcu_pwmAccCalcNextSpeedIterConcaveConvex(const mcu_actuator act
     return MCU_ERROR_NONE;
 }
 
-void doAdjust(SDL_Renderer *renderer, adjustParams * args)
+uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
 {
     accMoveDirective directive;
 
@@ -119,30 +122,35 @@ void doAdjust(SDL_Renderer *renderer, adjustParams * args)
     directive.targetPos = 15000000;
     directive.targetSpeed = args->targetSpeed;
 
-
     static uint32_t total_time_ms = 0;
-    uint32_t time_ms = 0;
+    uint32_t runtime_ms = 0;
     int32_t speedStep = 0;
 
     int32_t delay_us = 1000000 / args->adjFreq;
     int32_t delay_ms = delay_us / 1000;
-
+    int32_t time_ms = 0;
     bool stop = false;
 
     int iter = 0;
     SDL_Point points[100];
 
     do {
-
-        total_time_ms += delay_ms;
-        time_ms += delay_ms;
+        if (args->runtime_ms) {
+            time_ms = args->runtime_ms - runtime_ms;
+        } else {
+            time_ms = runtime_ms;
+        }
 
         // Get the next speed step
         mcu_error error = mcu_pwmAccCalcNextSpeedIterConcaveConvex(
             0, &directive, time_ms, &speedStep);
 
         // Update the speed
-        directive.currentSpeed = speedStep;
+        if (args->initSpeed) {
+            directive.currentSpeed = args->initSpeed - speedStep;
+        } else {
+            directive.currentSpeed = speedStep;
+        }
 
         // Check that we wont exceed the limits
         if (accelerate) {
@@ -161,7 +169,12 @@ void doAdjust(SDL_Renderer *renderer, adjustParams * args)
         printf("SpeedStep: %d, CurrentSpeed: %d, Total time (ms): %d\n",
             speedStep, directive.currentSpeed, total_time_ms);
         fflush(stdout);
-        usleep(delay_us);
+
+        if (!stop) {
+            usleep(delay_us);
+            total_time_ms += delay_ms;
+            runtime_ms += delay_ms;
+        }
         iter++;
 
     } while (!stop);
@@ -170,6 +183,7 @@ void doAdjust(SDL_Renderer *renderer, adjustParams * args)
     SDL_RenderDrawLines(renderer, points, iter);
     SDL_RenderPresent(renderer);
 
+    return runtime_ms;
 }
 
 SDL_Point resolvePoint(int x_val, int y_val)
