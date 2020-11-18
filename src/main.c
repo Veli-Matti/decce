@@ -13,6 +13,9 @@
 #define SCALE_FACTOR_Y 0.1
 
 #define POINTS_BASELINE_Y 200
+#define MIN_SPEED_UMS  0
+#define MAX_SPEED_UMS  1000
+
 
 static uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args);
 
@@ -49,9 +52,9 @@ int main()
 
     adjustParams args;
     args.adjFreq = 10;
-    args.initSpeed = 0;
+    args.initSpeed = MIN_SPEED_UMS;
     args.maxAcc = 500;
-    args.targetSpeed = 1000;
+    args.targetSpeed = MAX_SPEED_UMS;
     args.runtime_ms = 0;
     uint32_t convex_ms = doAdjust(renderer, &args);
 
@@ -59,7 +62,7 @@ int main()
     SDL_SetRenderDrawColor(renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
 
     args.initSpeed = args.targetSpeed;
-    args.targetSpeed = 0;
+    args.targetSpeed = MIN_SPEED_UMS;
     args.runtime_ms = convex_ms;
     uint32_t concave_ms = doAdjust(renderer, &args);
 
@@ -89,17 +92,13 @@ int main()
 static mcu_error mcu_pwmAccCalcNextSpeedIterConcaveConvex(const mcu_actuator act,
         accMoveDirective * directive, uint32_t time_ms, int32_t * speedStep)
 {
-    float v0 = (float)directive->initialSpeed;
+    float vh = (float)directive->initialSpeed;
     float phaseTime = (float)time_ms/(float)1000.00;
     float jerk = (float)directive->jerk;
 
-    const float a0 = 0;
-    float speed = v0 + a0 * phaseTime + (jerk / (float)2.00) *
-            (phaseTime * phaseTime);
+    // v(t) = vh + as * j * (t^2 / 2)
+    float speed = vh + jerk * (phaseTime * phaseTime) / 2.00;
 
-    if (speed < 0) {
-        speed = 0;
-    }
     *speedStep = (int32_t)speed;
     return MCU_ERROR_NONE;
 }
@@ -146,10 +145,10 @@ uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
             0, &directive, time_ms, &speedStep);
 
         // Update the speed
-        if (args->initSpeed) {
-            directive.currentSpeed = args->initSpeed - speedStep;
-        } else {
+        if (accelerate) {
             directive.currentSpeed = speedStep;
+        } else {
+            directive.currentSpeed = args->initSpeed - speedStep;
         }
 
         // Check that we wont exceed the limits
@@ -166,8 +165,8 @@ uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
         SDL_Point point = resolvePoint(total_time_ms, directive.currentSpeed);
         points[iter] = point;
 
-        printf("SpeedStep: %d, CurrentSpeed: %d, Total time (ms): %d\n",
-            speedStep, directive.currentSpeed, total_time_ms);
+        printf("[%d] SpeedStep: %d, CurrentSpeed: %d, Total time (ms): %d\n",
+            iter, speedStep, directive.currentSpeed, total_time_ms);
         fflush(stdout);
 
         if (!stop) {
