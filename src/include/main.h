@@ -1,3 +1,4 @@
+
 typedef struct {
     int initSpeed;
     int targetSpeed;
@@ -5,3 +6,10 @@ typedef struct {
     int maxAcc;
     uint32_t runtime_ms;
 } adjustParams;
+
+typedef struct
+{
+    /* data */
+    uint32_t lastStep;
+    uint32_t runTime;
+} adjustSum;

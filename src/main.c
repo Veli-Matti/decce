@@ -9,7 +9,7 @@
 
 #define AREA_WIDTH_X 1000
 #define AREA_WIDTH_Y 1000
-#define SCALE_FACTOR_X 0.1
+#define SCALE_FACTOR_X 0.3
 #define SCALE_FACTOR_Y 0.1
 
 #define POINTS_BASELINE_Y 200
@@ -17,7 +17,7 @@
 #define MAX_SPEED_UMS  1000
 
 
-static uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args);
+static adjustSum doAdjust(SDL_Renderer *renderer, adjustParams * args);
 
 static SDL_Point resolvePoint(int x_val, int y_val);
 
@@ -43,7 +43,7 @@ int main()
 
             // Set the scale factor
             SDL_RenderSetScale(renderer, SCALE_FACTOR_X, SCALE_FACTOR_Y);
-            usleep(1000);
+            usleep(10000);
         }
     }
 
@@ -57,17 +57,17 @@ int main()
     args.maxAcc = 500;
     args.targetSpeed = MAX_SPEED_UMS;
     args.runtime_ms = 0;
-    uint32_t convex_ms = doAdjust(renderer, &args);
+    adjustSum convex_summary = doAdjust(renderer, &args);
 
     // ... Decceleration
     SDL_SetRenderDrawColor(renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
 
-    args.initSpeed = args.targetSpeed;
+    args.initSpeed = args.targetSpeed - convex_summary.lastStep;
     args.targetSpeed = MIN_SPEED_UMS;
-    args.runtime_ms = convex_ms;
-    uint32_t concave_ms = doAdjust(renderer, &args);
+    args.runtime_ms = convex_summary.runTime - 100;  // FIXME. Hard coded. One step less since the current impl. handles full steps only
+    adjustSum concave_summary = doAdjust(renderer, &args);
 
-    printf("RUNTIMES (ms). Convex: %d, Concave: %d\n", convex_ms, concave_ms);
+    printf("RUNTIMES (ms). Convex: %d, Concave: %d\n", convex_summary.runTime, concave_summary.runTime);
     // Leave the window open until 'X' is clicked
     SDL_Event event;
     while (!done) {
@@ -93,19 +93,19 @@ int main()
 static mcu_error mcu_pwmAccCalcNextSpeedIterConcaveConvex(const mcu_actuator act,
         accMoveDirective * directive, uint32_t time_ms, int32_t * speedStep)
 {
-    float vh = (float)directive->initialSpeed;
+    //float vh = (float)directive->initialSpeed;
     float phaseTime = (float)time_ms/(float)1000.00;
     float jerk = (float)directive->jerk;
-
-    // v(t) = vh + as * j * (t^2 / 2)
-    float speed = vh + jerk * (phaseTime * phaseTime) / 2.00;
+    //float speed = vh + jerk * (phaseTime * phaseTime) / 2.00;
+    float speed = jerk * (phaseTime * phaseTime) / 2.00;
 
     *speedStep = (int32_t)speed;
     return MCU_ERROR_NONE;
 }
 
-uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
+adjustSum doAdjust(SDL_Renderer *renderer, adjustParams * args)
 {
+    adjustSum retval;
     accMoveDirective directive;
 
     bool accelerate = args->initSpeed < args->targetSpeed;
@@ -124,7 +124,7 @@ uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
 
     static uint32_t total_time_ms = 0;
     uint32_t runtime_ms = 0;
-    int32_t speedStep = 0;
+    int32_t speedDelta = 0;
 
     int32_t delay_us = 1000000 / args->adjFreq;
     int32_t delay_ms = delay_us / 1000;
@@ -133,6 +133,7 @@ uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
 
     int iter = 0;
     SDL_Point points[100];
+    memset((char*)&points, '\0', sizeof(points));
 
     do {
         if (args->runtime_ms) {
@@ -143,50 +144,48 @@ uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
 
         // Get the next speed step
         mcu_error error = mcu_pwmAccCalcNextSpeedIterConcaveConvex(
-            0, &directive, time_ms, &speedStep);
+            0, &directive, time_ms, &speedDelta);
 
-        // Update the speed
-        if (accelerate) {
-            directive.currentSpeed = speedStep;
-        } else {
-            directive.currentSpeed = args->initSpeed - speedStep;
-        }
+        // Update the current speed
+        directive.currentSpeed += speedDelta;
 
-        uint32_t scaledTimeMs;
+        
         // Check that we wont exceed the limits
         if (accelerate) {
             stop = directive.currentSpeed >= args->targetSpeed;
-            scaledTimeMs = time_ms;
         } else {
             stop = directive.currentSpeed <= args->targetSpeed;
-            scaledTimeMs = time_ms + 200;
         }
-        if (stop) {
+        // Scale the x-axis a bit - just to see the diff between phases
+        uint32_t scaledTimeMs = accelerate ? time_ms : time_ms + 200;;
+        if (stop) {            
+            uint32_t prevSpeed = directive.currentSpeed;
             directive.currentSpeed = args->targetSpeed;
+            retval.lastStep = directive.currentSpeed - prevSpeed;
         }
 
         // Print the data
         SDL_Point point = resolvePoint(scaledTimeMs, directive.currentSpeed);
         points[iter] = point;
 
-        printf("[%d] SpeedStep: %d, CurrentSpeed: %d, Total time (ms): %d\n",
-            iter, speedStep, directive.currentSpeed, total_time_ms);
+        printf("[%d] SpeedDelta: %d, CurrentSpeed: %d, Total time (ms): %d\n",
+            iter, speedDelta, directive.currentSpeed, total_time_ms);
         fflush(stdout);
-
-        if (!stop) {
-            // usleep(delay_us);
-            total_time_ms += delay_ms;
-            runtime_ms += delay_ms;
-        }
         iter++;
+    
+        if (!stop) {
+            total_time_ms += delay_ms;
+        }
+        runtime_ms += delay_ms;
 
     } while (!stop);
 
     // Draw the curve
     SDL_RenderDrawLines(renderer, points, iter);
     SDL_RenderPresent(renderer);
-    usleep(100000);
-    return runtime_ms;
+    usleep(1000000);
+    retval.runTime = runtime_ms;
+    return retval;
 }
 
 SDL_Point resolvePoint(int x_val, int y_val)
