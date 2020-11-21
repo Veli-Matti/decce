@@ -43,6 +43,7 @@ int main()
 
             // Set the scale factor
             SDL_RenderSetScale(renderer, SCALE_FACTOR_X, SCALE_FACTOR_Y);
+            usleep(1000);
         }
     }
 
@@ -151,18 +152,21 @@ uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
             directive.currentSpeed = args->initSpeed - speedStep;
         }
 
+        uint32_t scaledTimeMs;
         // Check that we wont exceed the limits
         if (accelerate) {
             stop = directive.currentSpeed >= args->targetSpeed;
+            scaledTimeMs = time_ms;
         } else {
             stop = directive.currentSpeed <= args->targetSpeed;
+            scaledTimeMs = time_ms + 200;
         }
         if (stop) {
             directive.currentSpeed = args->targetSpeed;
         }
 
         // Print the data
-        SDL_Point point = resolvePoint(total_time_ms, directive.currentSpeed);
+        SDL_Point point = resolvePoint(scaledTimeMs, directive.currentSpeed);
         points[iter] = point;
 
         printf("[%d] SpeedStep: %d, CurrentSpeed: %d, Total time (ms): %d\n",
@@ -170,7 +174,7 @@ uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
         fflush(stdout);
 
         if (!stop) {
-            usleep(delay_us);
+            // usleep(delay_us);
             total_time_ms += delay_ms;
             runtime_ms += delay_ms;
         }
@@ -181,7 +185,7 @@ uint32_t doAdjust(SDL_Renderer *renderer, adjustParams * args)
     // Draw the curve
     SDL_RenderDrawLines(renderer, points, iter);
     SDL_RenderPresent(renderer);
-
+    usleep(100000);
     return runtime_ms;
 }
 
