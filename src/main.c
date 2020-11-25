@@ -13,9 +13,10 @@
 #define SCALE_FACTOR_Y 0.1
 
 #define POINTS_BASELINE_Y 200
-#define MIN_SPEED_UMS  0
+#define MIN_SPEED_UMS  125
 #define MAX_SPEED_UMS  1000
 
+#define DRAW_CONCAVE_CONVEX_DELTA   0
 
 static adjustSum doAdjust(SDL_Renderer *renderer, adjustParams * args);
 
@@ -57,14 +58,16 @@ int main()
     args.maxAcc = 500;
     args.targetSpeed = MAX_SPEED_UMS;
     args.runtime_ms = 0;
+    args.firstStep = 0;
     adjustSum convex_summary = doAdjust(renderer, &args);
 
     // ... Decceleration
     SDL_SetRenderDrawColor(renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
 
-    args.initSpeed = args.targetSpeed - convex_summary.lastStep;
+    args.firstStep = convex_summary.lastStep;
+    args.initSpeed = args.targetSpeed;
     args.targetSpeed = MIN_SPEED_UMS;
-    args.runtime_ms = convex_summary.runTime - 100;  // FIXME. Hard coded. One step less since the current impl. handles full steps only
+    args.runtime_ms = convex_summary.runTime;
     adjustSum concave_summary = doAdjust(renderer, &args);
 
     printf("RUNTIMES (ms). Convex: %d, Concave: %d\n", convex_summary.runTime, concave_summary.runTime);
@@ -77,8 +80,6 @@ int main()
             }
         }
     }
-
-    // Damp down SDL
     if (renderer) {
         SDL_DestroyRenderer(renderer);
     }
@@ -129,6 +130,7 @@ adjustSum doAdjust(SDL_Renderer *renderer, adjustParams * args)
     int32_t delay_us = 1000000 / args->adjFreq;
     int32_t delay_ms = delay_us / 1000;
     int32_t time_ms = 0;
+    int32_t first_step = -(int32_t)args->firstStep;
     bool stop = false;
 
     int iter = 0;
@@ -142,9 +144,20 @@ adjustSum doAdjust(SDL_Renderer *renderer, adjustParams * args)
             time_ms = runtime_ms;
         }
 
-        // Get the next speed step
-        mcu_error error = mcu_pwmAccCalcNextSpeedIterConcaveConvex(
-            0, &directive, time_ms, &speedDelta);
+        if (first_step) {
+            // Set the start speed
+            SDL_Point point_tmp = resolvePoint(time_ms + DRAW_CONCAVE_CONVEX_DELTA + delay_ms, directive.initialSpeed);
+            points[iter] = point_tmp;
+            iter++;
+
+            speedDelta = first_step;
+            first_step = 0;
+            //runtime_ms = delay_ms;
+        } else {
+            // Get the next speed step
+            mcu_error error = mcu_pwmAccCalcNextSpeedIterConcaveConvex(
+                0, &directive, time_ms, &speedDelta);
+        }
 
         // Update the current speed
         directive.currentSpeed += speedDelta;
@@ -157,11 +170,12 @@ adjustSum doAdjust(SDL_Renderer *renderer, adjustParams * args)
             stop = directive.currentSpeed <= args->targetSpeed;
         }
         // Scale the x-axis a bit - just to see the diff between phases
-        uint32_t scaledTimeMs = accelerate ? time_ms : time_ms + 200;;
+        uint32_t scaledTimeMs = accelerate ? time_ms : time_ms + DRAW_CONCAVE_CONVEX_DELTA;
         if (stop) {            
             uint32_t prevSpeed = directive.currentSpeed;
             directive.currentSpeed = args->targetSpeed;
-            retval.lastStep = directive.currentSpeed - prevSpeed;
+            retval.lastStep = directive.currentSpeed - (prevSpeed - speedDelta);
+            speedDelta = retval.lastStep;
         }
 
         // Print the data
@@ -173,10 +187,9 @@ adjustSum doAdjust(SDL_Renderer *renderer, adjustParams * args)
         fflush(stdout);
         iter++;
     
-        if (!stop) {
-            total_time_ms += delay_ms;
-        }
-        runtime_ms += delay_ms;
+        total_time_ms += delay_ms;
+        if (!stop)
+            runtime_ms += delay_ms;
 
     } while (!stop);
 

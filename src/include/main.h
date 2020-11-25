@@ -5,6 +5,7 @@ typedef struct {
     int adjFreq;
     int maxAcc;
     uint32_t runtime_ms;
+    uint32_t firstStep;
 } adjustParams;
 
 typedef struct
